@@ -10,10 +10,11 @@
 %%
 /*{Comments} {System.out.print(yytext());}*/
 <YYINITIAL> {
-    "{" {yybegin(COMMENTS);}
+    ^"{" {yybegin(COMMENTS);}
 }
 <COMMENTS> {
     "}" {yybegin(YYINITIAL);}
-    [^"}"]+ {System.out.print(yytext());}
+    [^o"}"]+ {System.out.print(yytext());}
 }
 . {}
+\n {}

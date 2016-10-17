@@ -7,7 +7,7 @@
 %xstate YYINITIAL, AS, BS, CS
 /*Comments = "{"[^"}"]*"}"*/
 Word = compiler
-EOL = \r?|\n
+EOL = "\r"?"\n"
 
 %%
 /*{Comments} {System.out.print(yytext());}*/

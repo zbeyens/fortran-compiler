@@ -1,4 +1,5 @@
 java -jar /usr/share/jflex-1.6.1/lib/jflex-1.6.1.jar ex1.flex && javac ex1.java && java ex1 test.txt
+jflex ex3.flex && javac ex3.java && java ex3 test.txt
 
 ex1: A
 ex2

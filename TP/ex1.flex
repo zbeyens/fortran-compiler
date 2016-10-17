@@ -5,6 +5,8 @@
 %standalone
 
 EndOfLine = "\r"?"\n"
-Line = .*{EndOfLine}
+Line = .* {EndOfLine}
 %%
-{Line} {System.out.println(yyline+yytext());}
+{Line} {System.out.print(yyline+yytext());}
+\n {}
+. {}

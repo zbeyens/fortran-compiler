@@ -1,4 +1,3 @@
-
 %%// Options of the scanner
 
 %class Lexer4	//Name
@@ -13,7 +12,7 @@
 //Extended Regular Expressions
 
 Space				= "\t" | " "
-EndOfLine		= "\r"?"\n"	
+EndOfLine		= "\r"?"\n"
 Line				= .*{EndOfLine}
 
 //Declare exclusive states
@@ -28,9 +27,8 @@ Line				= .*{EndOfLine}
 	^"b"			{replacement = "???"; System.out.print(yytext());}
 	^"c"			{replacement = "profit!!!"; System.out.print(yytext());}
 	{EndOfLine}	{ replacement = "compiler"; System.out.print(yytext()); }
-	
+
 	{Space}"compiler" / ({Space}|{EndOfLine}) { System.out.print(yytext().replaceAll("compiler",replacement)); }
-	
+
 	.				{System.out.print(yytext());}
 }
-

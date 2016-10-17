@@ -46,4 +46,3 @@ Identifier		= {Alpha}{AlphaNumeric}*
 
 //C99 variable identifier
 {Identifier}	{return new Symbol(sym.C99VAR,yyline, yycolumn, yytext());}
-
