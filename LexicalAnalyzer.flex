@@ -25,7 +25,6 @@ AlphaUpperCase	= [A-Z]
 AlphaLowerCase	= [a-z]
 Alpha			= {AlphaUpperCase}|{AlphaLowerCase}
 Space           = "\t" | " "
-Comma           = {Space}*","{Space}*
 
 Number			= [0-9] //0
 AlphaNumeric	= {Alpha}|{Number}
@@ -33,63 +32,97 @@ VarName 		= {Alpha}{AlphaNumeric}* //0
 EndLine         = ({Space}* "\r"? "\n"+)+ {Space}* //0
 
 /*ProgramBegin    = ^{Space}* "PROGRAM" {Space}+*/
+//Program
 ProgramBegin    = {Space}* "PROGRAM" {Space}+
 ProgramEnd      = {Space}* "END"
-Program         = {ProgramBegin} {VarName} {EndLine} {Vars} {Code} {ProgramEnd}
+//Vars - VarList
+Vars            = "INTEGER" {Space}+
+Comma           = {Space}*","{Space}*
+//Code
+EqualSign       = {Space}*"="{Space}*
+/*Assign          = {VarName} {EqualSign}*/
+Read            = "READ"{Space}*"*"
 
-VarList         = {VarName}({Comma}{VarName})* //4,5
-Vars           = "INTEGER" {Space}+
-
-%state YYINITIAL, STATE1, STATE2, STATE3, STATE4, STATE5, STATE6
+%state YYINITIAL, PROGNAME, PROGRAM_EOL, VARS, VARLIST, VARLIST_NEXT, CODE, INSTRUCTION, READ_COMMA
 
 %%//Identification of tokens
 <YYINITIAL> {
     {ProgramBegin} {
         System.out.println("token: " + yytext() + "\tlexical unit: " + "PROGRAM");
-        yybegin(STATE1);
+        return symbol(LexicalUnit.PROGRAM, yytext());
+        yybegin(PROGNAME);
     }
 }
 
-<STATE1> {
+<PROGNAME> {
     {VarName} {
         System.out.println("token: " + yytext() + "\tlexical unit: " + "VARNAME");
-        yybegin(STATE2);
+        yybegin(PROGRAM_EOL);
     }
 }
 
-<STATE2> {
+<PROGRAM_EOL> {
     {EndLine} {
         System.out.println("token: " + "\t" + "\tlexical unit: " + "ENDLINE");
-        yybegin(STATE3);
+        yybegin(VARS);
     }
 }
 
-<STATE3> {
+<VARS> {
     {Vars} {
         System.out.println("token: " + yytext() + "\tlexical unit: " + "INTEGER");
-        yybegin(STATE4);
+        yybegin(VARLIST);
     }
+
+    //ε
 }
 
-<STATE4> {
+<VARLIST> {
     {VarName} {
         System.out.println("token: " + yytext() + "\tlexical unit: " + "VARNAME");
-        yybegin(STATE5);
+        yybegin(VARLIST_NEXT);
     }
 }
 
-<STATE5> {
+<VARLIST_NEXT> {
     {Comma} {
         System.out.println("token: " + yytext() + "\tlexical unit: " + "COMMA");
-        yybegin(STATE4);
+        yybegin(VARLIST);
     }
 
     {EndLine} {
         System.out.println("token: " + "\t" + "\tlexical unit: " + "ENDLINE");
-        yybegin(STATE6);
+        yybegin(INSTRUCTION);
     }
 }
 
+/*<CODE> {
+    yybegin(INSTRUCTION);
+}*/
+
+<INSTRUCTION> {
+    /*{Assign} {
+        System.out.println("token: " + "\t" + "\tlexical unit: " + "ENDLINE");
+        yybegin(INSTRUCTION);
+    }*/
+
+    {Read} {
+        System.out.println("token: " + yytext() + "\tlexical unit: " + "READ");
+        yybegin(READ_COMMA);
+    }
+}
+
+<READ_COMMA> {
+    {Comma} {
+        System.out.println("token: " + yytext() + "\tlexical unit: " + "COMMA");
+        yybegin(VARLIST);
+    }
+
+    {EndLine} {
+        System.out.println("token: " + "\t" + "\tlexical unit: " + "ENDLINE");
+        yybegin(CODE);
+    }
+}
 
 \n {}
 . {}
