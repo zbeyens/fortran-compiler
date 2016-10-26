@@ -79,10 +79,14 @@ Read            = [Rr][Ee][Aa][Dd]"*"
 EndOfLine       = "\r"? "\n"
 EndLine         = {EndOfLine}+ ([cC*dD!] .* {EndOfLine}+)* //infinite EOL + comments ignored
 
-%state YYINITIAL, CODE
+%state YYINITIAL, IDENTIFIERS
 %%//Identification of tokens
 
 //if no comments. Should we handle the endlines after END ?
+<IDENTIFIERS> {
+    {EndLine} {Symbol symb = symbol(LexicalUnit.ENDLINE, "\t");
+    yybegin(YYINITIAL);}
+}
 {EndLine} {Symbol symb = symbol(LexicalUnit.ENDLINE, "\t");}
 
 {Program} {Symbol symb = symbol(LexicalUnit.PROGRAM, yytext());}
@@ -95,6 +99,7 @@ EndLine         = {EndOfLine}+ ([cC*dD!] .* {EndOfLine}+)* //infinite EOL + comm
 {Not} {Symbol symb = symbol(LexicalUnit.NOT, yytext());}
 {And} {Symbol symb = symbol(LexicalUnit.AND, yytext());}
 {Or} {Symbol symb = symbol(LexicalUnit.OR, yytext());}
+//before =
 {Equal_Compare} {Symbol symb = symbol(LexicalUnit.EQUAL_COMPARE, yytext());}
 {Greater_Equal} {Symbol symb = symbol(LexicalUnit.GREATER_EQUAL, yytext());}
 {Greater} {Symbol symb = symbol(LexicalUnit.GREATER, yytext());}
@@ -124,12 +129,12 @@ EndLine         = {EndOfLine}+ ([cC*dD!] .* {EndOfLine}+)* //infinite EOL + comm
 
 <YYINITIAL> {
     {Integer} {Symbol symb = symbol(LexicalUnit.INTEGER, yytext());
-                yybegin(CODE);}
+                yybegin(IDENTIFIERS);}
     //progname, after all alpha symbols
     {VarName} {Symbol symb = symbol(LexicalUnit.VARNAME, yytext());}
 }
 
-<CODE> {
+<IDENTIFIERS> {
     //identifiers, after all alpha symbols
     {VarName} {Symbol symb = symbol(LexicalUnit.VARNAME, yytext());
         addInTable(symb);}
