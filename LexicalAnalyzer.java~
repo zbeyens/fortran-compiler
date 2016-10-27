@@ -18,7 +18,7 @@ class LexicalAnalyzer {
 
   /** lexical states */
   public static final int YYINITIAL = 0;
-  public static final int CODE = 2;
+  public static final int IDENTIFIERS = 2;
 
   /**
    * ZZ_LEXSTATE[l] is the state in the DFA for the lexical state l
@@ -882,7 +882,7 @@ class LexicalAnalyzer {
           case 70: break;
           case 35: 
             { Symbol symb = symbol(LexicalUnit.INTEGER, yytext());
-                yybegin(CODE);
+                yybegin(IDENTIFIERS);
             }
           case 71: break;
           case 36: 
