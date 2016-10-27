@@ -356,6 +356,11 @@ class LexicalAnalyzer {
             System.out.println(symb.getValue() + "\t" + symb.getLine());
         }
     }
+	public ArrayList<Symbol> getSymbolTable(){
+		return symbolTable;
+	}
+	
+	
 
 
   /**

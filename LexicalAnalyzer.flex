@@ -7,6 +7,7 @@ import java.util.*;
 %column			//Use character counter by line (yycolumn variable)
 %standalone
 
+
 %{
 
     private ArrayList<Symbol> symbolTable = new ArrayList<Symbol>();
@@ -37,6 +38,11 @@ import java.util.*;
             System.out.println(symb.getValue() + "\t" + symb.getLine());
         }
     }
+	public ArrayList<Symbol> getSymbolTable(){
+		return symbolTable;
+	}
+	
+	
 %}
 
 %eof{
