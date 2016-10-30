@@ -1,4 +1,5 @@
 import java.util.*;
+import java.io.*;
 
 %%// Options of the scanner
 %class LexicalAnalyzer	//Name
@@ -7,14 +8,23 @@ import java.util.*;
 %column			//Use character counter by line (yycolumn variable)
 %standalone
 
-
 %{
 
     private ArrayList<Symbol> symbolTable = new ArrayList<Symbol>();
 
+    public PrintWriter createWriter() {
+        try {
+            return new PrintWriter(file);
+        } catch (FileNotFoundException ex) {}
+        return null;
+    }
+    private File file = new File("Factoriellee.out");
+    private PrintWriter writer = createWriter();
+
+
     private Symbol symbol(LexicalUnit type, Object value) {
         Symbol sb = new Symbol(type, yyline, yycolumn, value);
-        System.out.println(sb.toString());
+        writer.println(sb.toString());
         return sb;
     }
 
@@ -33,10 +43,11 @@ import java.util.*;
 
     //print all the identifiers with the line where first occuring
     private void printSymbolTable() {
-        System.out.println("Identifiers");
+        writer.println("Identifiers");
         for (Symbol symb : symbolTable) {
-            System.out.println(symb.getValue() + "\t" + symb.getLine());
+            writer.println(symb.getValue() + "\t" + symb.getLine());
         }
+        writer.close();
     }
 %}
 
