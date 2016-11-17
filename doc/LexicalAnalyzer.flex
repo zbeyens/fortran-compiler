@@ -9,19 +9,22 @@ import java.io.*;
 %standalone
 
 %{
-
     private ArrayList<Symbol> symbolTable = new ArrayList<Symbol>();
-
+	public static String name="";
+	private File file = new File(name);
+    private PrintWriter writer = createWriter();
+	
+	
     public PrintWriter createWriter() {
         try {
             return new PrintWriter(file);
         } catch (FileNotFoundException ex) {}
         return null;
     }
-    private File file = new File("Factoriellee.out");
-    private PrintWriter writer = createWriter();
+	
+    
 
-
+	
     private Symbol symbol(LexicalUnit type, Object value) {
         Symbol sb = new Symbol(type, yyline, yycolumn, value);
         writer.println(sb.toString());
@@ -40,15 +43,31 @@ import java.io.*;
             symbolTable.add(sb);
         }
     }
+	public static Comparator<Symbol> SymbolComparator = new Comparator<Symbol>() {
+
+	    public int compare(Symbol sb1, Symbol sb2) {
+			String Name1 = (String) sb1.getValue();
+			Name1=Name1.toUpperCase();
+			String Name2 = (String) sb2.getValue();
+			Name2=Name2.toUpperCase();
+			//ascending order
+			return Name1.compareTo(Name2);
+	    }
+
+	};
+	
 
     //print all the identifiers with the line where first occuring
     private void printSymbolTable() {
         writer.println("Identifiers");
+		Collections.sort(symbolTable,SymbolComparator);
         for (Symbol symb : symbolTable) {
             writer.println(symb.getValue() + "\t" + symb.getLine());
         }
         writer.close();
     }
+	
+	
 %}
 
 %eof{
@@ -62,7 +81,7 @@ AlphaNumeric	= {Alpha}|[0-9]
 
 VarName 		= {Alpha}{AlphaNumeric}*
 Integer         = [Ii][Nn][Tt][Ee][Gg][Ee][Rr]
-Number			= [0-9] //token: minus dans le nombre ou séparé ?
+Number			= [0-9]+ //token: minus dans le nombre ou séparé ?
 
 Program         = [Pp][Rr][Oo][Gg][Rr][Aa][Mm]
 End             = [Ee][Nn][Dd]
@@ -157,4 +176,4 @@ EndLine         = {EndOfLine}+ ([cC*dD!] .* {EndOfLine}+)* //infinite EOL + comm
 
 " " {}
 //should we handle errors that use symbol ? (i.e. delete the * at line 4)
-. {System.out.println("ERROR");}
+. {writer.println("ERROR");}
