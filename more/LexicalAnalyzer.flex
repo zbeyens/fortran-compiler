@@ -15,7 +15,7 @@ import java.io.*;
     private Symbol symbol(LexicalUnit type, Object value) {
         Symbol sb = new Symbol(type, yyline, yycolumn, value);
         symList.add(sb);
-        System.out.println(sb.toString());
+        /*System.out.println(sb.toString());*/
         return sb;
     }
 
@@ -57,7 +57,7 @@ import java.io.*;
 %}
 
 %eof{
-    printSymbolTable();
+    /*printSymbolTable();*/
 %eof}
 
 //Extended Regular Expressions

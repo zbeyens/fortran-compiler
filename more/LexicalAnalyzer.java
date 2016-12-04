@@ -335,7 +335,7 @@ class LexicalAnalyzer {
     private Symbol symbol(LexicalUnit type, Object value) {
         Symbol sb = new Symbol(type, yyline, yycolumn, value);
         symList.add(sb);
-        System.out.println(sb.toString());
+        /*System.out.println(sb.toString());*/
         return sb;
     }
 
@@ -606,7 +606,7 @@ class LexicalAnalyzer {
   private void zzDoEOF() {
     if (!zzEOFDone) {
       zzEOFDone = true;
-        printSymbolTable();
+        /*printSymbolTable();*/
 
     }
   }

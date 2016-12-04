@@ -1,8 +1,8 @@
 # fortran-compiler
-Command Lines to run without jar file:
+Command Lines to run without jar file in "more" folder:
 jflex LexicalAnalyzer.flex
-javac Main.java
-java Main sourceFile
+javac *.java
+java Main ../test/exampleLong.alg
 
 Command line to create the jarfile:
 in doc:
