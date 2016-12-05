@@ -7,16 +7,14 @@ javac *.java
 
 java Main ../test/exampleLong.alg
 
-Command line to create the jarfile in "more" folder:
+Command line to create the jarfile in "more" folder (with windows):
 
 jflex LexicalAnalyzer.flex
 
-javac Main.java
+javac *.java
 
-java Main sourceFile
-
-jar cvmf META-INF/MANIFEST.MF uberFortran.jar *.class
+jar cvmf META-INF/MANIFEST.MF Part2_Beyens_Nougba.jar *.class
 
 command line to run the jar:
 
-java -jar uberFortran.jar "../test/factorielle.alg" (on windows)
+java -jar Part2_Beyens_Nougba.jar "../test/exampleLong.alg" (on windows)
