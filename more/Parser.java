@@ -21,8 +21,8 @@ private ArrayList<String> condList; //stack the if labels
 private Integer temp; //To store temporary LLVM variables (%0, %1, etc.)
 private Integer counter;
 private Integer labelCounter; //counter for label
+private Integer doLoopCounter; //counter for label do
 private Object leftExp;
-private String condFalse;
 private Object notCond1;
 private LexicalUnit notCondOp;
 private Object notCond2;
@@ -43,6 +43,7 @@ public Parser() {
     temp = -1;
     counter = -1;
     labelCounter = -1;
+    doLoopCounter = -1;
 }
 
 /**
@@ -61,11 +62,6 @@ public void write(String s) {
 public void write(String s, Integer indentationLevel) {
     String indentation = getIndentation(indentationLevel);
     codeList.add(indentation + s + "\n");
-    // try {
-    //     // fileWriter.write(indentation+s+"\n");
-    // } catch (IOException e) {
-    //     System.out.print(e);
-    // }
 }
 
 /**
@@ -153,11 +149,6 @@ public void llvm_init() {
 public void llvm_close() {
     write("ret void");
     write("}", 0);
-    // try {
-    //     // fileWriter.close();
-    // } catch (IOException e) {
-    //     System.out.print(e);
-    // }
 }
 
 //Print/Read
@@ -251,6 +242,7 @@ public String icmpNot(Object left, LexicalUnit comp, Object right, String i) {
 //for
 public void initFor(String varName, String value1, String doCounter) throws Exception {
     assign("%" + varName, value1);
+    write("br label %for_loop_" + doCounter);
     nextLabel("for_loop_" + doCounter);
 }
 
@@ -853,13 +845,12 @@ Object If() throws Exception {
 
             Object res;
             String if_st = "if_" + ++labelCounter;
-            condFalse = "after_if_" + ++labelCounter;
+            String end_if = "end_if_" + labelCounter;
 
             if (match(LexicalUnit.IF))
                 if (match(LexicalUnit.LEFT_PARENTHESIS))
                     if (!((res = Cond()) instanceof Boolean)) {
-                        write("br i1 " + res + ", label %" + if_st + ", label %" + condFalse);
-                        // %9 = icmp slt i32 %8, %nombre
+                        write("br i1 " + res + ", label %" + if_st + ", label %" + end_if);
 
                         if (match(LexicalUnit.RIGHT_PARENTHESIS))
                             if (match(LexicalUnit.THEN))
@@ -867,10 +858,10 @@ Object If() throws Exception {
                                     nextLabel(if_st);
 
                                     if (!(Code() instanceof Boolean)) {
-                                        write("br label %" + condFalse);
-                                        nextLabel(condFalse);
+                                        write("br label %" + end_if);
+                                        nextLabel(end_if);
 
-                                        if (!(If_next() instanceof Boolean)) return new String("");
+                                        if (!(If_next(res) instanceof Boolean)) return new String("");
                                     }
                                 }
                     }
@@ -882,17 +873,18 @@ Object If() throws Exception {
     return new Boolean(false);
 }
 
-Object If_next() throws Exception {
+Object If_next(Object res) throws Exception {
     int r;
-    String after_if_else = "after_if_else_" + ++labelCounter;
+    String after_if = "after_if_" + ++labelCounter;
     switch (tok) {
         case ENDIF:
             r = 30;
             addRule(r);
 
+            write("br label %" + after_if);
+            nextLabel(after_if);
+
             if (match(LexicalUnit.ENDIF)) {
-                write("br label %" + after_if_else);
-                nextLabel(after_if_else);
                 return new String("");
             }
 
@@ -904,15 +896,15 @@ Object If_next() throws Exception {
             addRule(r);
 
             if (match(LexicalUnit.ELSE)) {
-                String else_st = "else_" + ++labelCounter;
-                write("br label %" + else_st);
+                String else_st = "else_" + labelCounter;
+                write("br i1 " + res + ", label %" + after_if + ", label %" + else_st);
                 nextLabel(else_st);
 
                 if (match(LexicalUnit.ENDLINE))
                     if (!(Code() instanceof Boolean))
                         if (match(LexicalUnit.ENDIF)) {
-                            write("br label %" + after_if_else);
-                            nextLabel(after_if_else);
+                            write("br label %" + after_if);
+                            nextLabel(after_if);
                             return new String("");
                         }
             }
@@ -939,9 +931,9 @@ Object Cond() throws Exception {
 
             if (!((res1 = Cond_b()) instanceof Boolean))
                 if (!((res2 = CondP(res1)) instanceof Boolean)) {
-                    if (res2 != "") return res2;
+                    if (res2.equals("")) return res1;
 
-                    return res1;
+                    return res2;
                 }
 
             printSyntaxError(r);
@@ -997,9 +989,9 @@ Object Cond_b() throws Exception {
 
             if (!((res1 = Cond_c()) instanceof Boolean))
                 if (!((res2 = Cond_bP(res1)) instanceof Boolean)) {
-                    if (res2 != "") return res2;
+                    if (res2.equals("")) return res1;
 
-                    return res1;
+                    return res2;
                 }
 
             printSyntaxError(r);
@@ -1169,7 +1161,7 @@ Object Do() throws Exception {
 
             if (match(LexicalUnit.DO)) {
                 String varName = tokValue;
-                String doCounter = "" + ++labelCounter;
+                String doCounter = "" + ++doLoopCounter;
 
                 if (match(LexicalUnit.VARNAME))
                     if (match(LexicalUnit.EQUAL)) {

@@ -7,12 +7,13 @@ PROGRAM factorielle
   READ*, nombre
   resultat = 1
 
-  IF (nombre .GE. 0) THEN
+  IF (nombre .GE. 2) THEN
     DO compteur = 1, 10
       resultat = resultat * compteur
     ENDDO
     PRINT*, resultat
   ELSE
-    PRINT*, -1
+    PRINT*, 1
   ENDIF
+  PRINT*, 0
 END
