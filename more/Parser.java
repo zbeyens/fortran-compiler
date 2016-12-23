@@ -15,6 +15,7 @@ private int curTok;
 private String syntaxError;
 private String label;
 private String state;
+private String fileNameOut;
 
 private HashMap<String, Integer> variables;
 private ArrayList<String> condList; //stack the if labels
@@ -27,8 +28,10 @@ private Object notCond1;
 private LexicalUnit notCondOp;
 private Object notCond2;
 
-public Parser() {
+public Parser(String fileNameOut) {
+	this.fileNameOut = fileNameOut;
     this.symList = LexicalAnalyzer.symList;
+	
     curTok = 0;
     syntaxError = "";
 
@@ -1315,12 +1318,19 @@ void printRules() {
 }
 
 void generateCode() {
-    if (syntaxError == "") {
-        for (int i = 0; i < codeList.size(); i++) {
-            System.out.print(codeList.get(i));
-        }
-    }
+	try{
+		PrintWriter writer = new PrintWriter(fileNameOut, "UTF-8");
+		if (syntaxError == "") {
+			for (int i = 0; i < codeList.size(); i++) {
+				writer.print(codeList.get(i));
+			}
+		}
+		writer.close();
+	} catch (IOException e) {
+		System.out.println("error during creation of outputfile");
+	}
 }
+  
 
 void printRule(int i) {
     String toPrint = "";
