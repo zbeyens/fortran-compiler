@@ -1,24 +1,358 @@
 import java.util.*;
 import java.io.*;
+import java.util.HashMap;
+import java.io.FileNotFoundException;
+import java.io.FileWriter;
+import java.io.IOException;
 
 public class Parser {
+private ArrayList<Integer> ruleList;
+private ArrayList<String> codeList;
 private ArrayList<Symbol> symList;
 private LexicalUnit tok;
-private int curTok = 0;
+private String tokValue;
+private int curTok;
+private String syntaxError;
+private String label;
+private String state;
+
+private HashMap<String, Integer> variables;
+private ArrayList<String> condList; //stack the if labels
+private Integer temp; //To store temporary LLVM variables (%0, %1, etc.)
+private Integer counter;
+private Integer labelCounter; //counter for label
+private Object leftExp;
+private String condFalse;
+private Object notCond1;
+private LexicalUnit notCondOp;
+private Object notCond2;
 
 public Parser() {
     this.symList = LexicalAnalyzer.symList;
+    curTok = 0;
+    syntaxError = "";
+
+    ruleList = new ArrayList<Integer>();
+
+    codeList = new ArrayList<String>();
+    variables = new HashMap<String, Integer>();
+    condList = new ArrayList<String>();
+
+    label = "";
+    state = "";
+    temp = -1;
+    counter = -1;
+    labelCounter = -1;
 }
 
-public void parse() {
+/**
+ * Writes a string in the LLVM file with the default indentation level (1)
+ * @param s line to write
+ */
+public void write(String s) {
+    write(s, 1);
+}
+
+/**
+ * Writes a string in the LLVM file with a certain indentation level
+ * @param s line to write
+ * @param indentationLevel indentation level
+ */
+public void write(String s, Integer indentationLevel) {
+    String indentation = getIndentation(indentationLevel);
+    codeList.add(indentation + s + "\n");
+    // try {
+    //     // fileWriter.write(indentation+s+"\n");
+    // } catch (IOException e) {
+    //     System.out.print(e);
+    // }
+}
+
+/**
+ * Given an indentation level, constructions the indentation string.
+ * Indentation = indentation level * "    " (4 spaces)
+ * @param indentationLevel indentation level
+ * @return indentation string
+ */
+private String getIndentation(Integer indentationLevel) {
+    String indentation = "";
+
+    for (int i = 0; i < indentationLevel; i++) {
+        indentation += "    ";
+    }
+
+    return indentation;
+}
+
+public void llvm_init() {
+    write("declare i32 @getchar()", 0);
+    write("declare void @putchar(i32 %n)\n", 0);
+
+    //@readIntRec
+    write("define i32 @readIntRec(i32 %acc) {", 0);
+    write("%x = call i32 @getchar()");
+    write("%greater = icmp sgt i32 %x, 47");
+    write("br i1 %greater, label %above_0, label %last_character");
+    write("above_0:", 0);
+    write("%less_than = icmp slt i32 %x, 58");
+    write("br i1 %less_than, label %below_9, label %last_character");
+    write("below_9:", 0);
+    write("%acc1 = mul i32 %acc,10");
+    write("%x1 = sub i32 %x, 48");
+    write("%acc2 = add i32 %acc1,%x1");
+    write("%ret_val = call i32 @readIntRec(i32 %acc2)");
+    write("ret i32 %ret_val");
+    write("last_character:", 0);
+    write("ret i32 %acc");
+    write("}\n", 0);
+
+    //@readInt
+    write("define i32 @readInt() {", 0);
+    write("entry:", 0);
+    write("%ret_val = call i32 @readIntRec(i32 0)");
+    write("ret i32 %ret_val");
+    write("}\n", 0);
+
+    //@printIntRec
+    write("define void @printIntRec(i32 %n) {", 0);
+    write("%is_zero = icmp ne i32 %n, 0 ");
+    write("br i1 %is_zero, label %print, label %do_nothing");
+    write("do_nothing: ", 0);
+    write("ret void");
+    write("print:", 0);
+    write("%one_tenth = sdiv i32 %n, 10");
+    write("call void @printIntRec(i32 %one_tenth) ");
+    write("%mod = srem i32 %n, 10");
+    write("%ascii = add i32 %mod, 48");
+    write("call void @putchar(i32 %ascii)");
+    write("ret void");
+    write("}\n", 0);
+
+    //@printInt
+    write("define void @printInt(i32 %n) {", 0);
+    write("%is_zero = icmp ne i32 %n, 0");
+    write("br i1 %is_zero, label %print_any_number, label %print_zero");
+    write("print_any_number:", 0);
+    write("call void @printIntRec(i32 %n)");
+    write("br label %print_newline");
+    write("print_zero:", 0);
+    write("call void @putchar(i32 48)");
+    write("br label %print_newline");
+    write("print_newline:", 0);
+    write("call void @putchar(i32 10)");
+    write("ret void");
+    write("}\n", 0);
+
+    //@main
+    write("define void @main() {", 0);
+}
+
+/**
+ * Closes the LLVM file. Called when the LL(1) parsing is finished
+ */
+public void llvm_close() {
+    write("ret void");
+    write("}", 0);
+    // try {
+    //     // fileWriter.close();
+    // } catch (IOException e) {
+    //     System.out.print(e);
+    // }
+}
+
+//Print/Read
+public void printInt(Object res) {
+    write("call void @printInt(i32 " + res + ")");
+}
+
+public void readInt(String varName) throws Exception {
+    check(varName);
+
+    String tmp = nextTemp();
+    write("%" + tmp + " = call i32 @readInt()");
+    write("store i32 %" + tmp + ", i32* " + varName);
+}
+
+//labels
+public void nextLabel(String lab) throws Exception {
+    label = lab;
+    write(label + ":", 0);
+}
+
+//cond
+public String icmp(Object left, LexicalUnit comp, Object right, String i) {
+    String cond = "";
+
+    switch (comp) {
+        case EQUAL_COMPARE:
+            cond = "eq";
+            break;
+
+        case GREATER_EQUAL:
+            cond = "sge";
+            break;
+
+        case GREATER:
+            cond = "sgt";
+            break;
+
+        case SMALLER_EQUAL:
+            cond = "sle";
+            break;
+
+        case SMALLER:
+            cond = "slt";
+            break;
+
+        case DIFFERENT:
+            cond = "ne";
+            break;
+    }
+
+    String newTemp = "%" + nextTemp();
+    write(newTemp + " = icmp " + cond + " " + i + " " + left + ", " + right);
+    return newTemp;
+}
+
+public String icmpNot(Object left, LexicalUnit comp, Object right, String i) {
+    String cond = "";
+
+    switch (comp) {
+        case EQUAL_COMPARE:
+            cond = "ne";
+            break;
+
+        case GREATER_EQUAL:
+            cond = "slt";
+            break;
+
+        case GREATER:
+            cond = "sle";
+            break;
+
+        case SMALLER_EQUAL:
+            cond = "sgt";
+            break;
+
+        case SMALLER:
+            cond = "sge";
+            break;
+
+        case DIFFERENT:
+            cond = "eq";
+            break;
+    }
+
+    String newTemp = "%" + nextTemp();
+    write(newTemp + " = icmp " + cond + " " + i + " " + left + ", " + right);
+    return newTemp;
+}
+
+//for
+public void initFor(String varName, String value1, String doCounter) throws Exception {
+    assign("%" + varName, value1);
+    nextLabel("for_loop_" + doCounter);
+}
+
+public void forLoop(String varName, String value2, String doCounter) throws Exception {
+    String newTemp1 = loadVariable(varName);
+    String newTemp2 = icmp(new String(newTemp1), LexicalUnit.SMALLER_EQUAL, new String(value2), "i32");
+    String inner_for = "inner_for_" + doCounter;
+    String after_for = "after_for" + doCounter;
+    write("br i1 " + newTemp2 + ", label %" + inner_for + ", label %" + after_for);
+    nextLabel(inner_for);
+}
+
+public void endFor(String varName, String doCounter) throws Exception {
+    String newTemp1 = loadVariable(varName);
+    String newTemp2 = "%" + nextTemp();
+    write(newTemp2 + " = add i32 " + newTemp1 + ", 1");
+    assign("%" + varName, newTemp2);
+    write("br label %for_loop_" + doCounter);
+
+    nextLabel("after_for" + doCounter);
+}
+
+/*****************************************************************************************************************
+******************************************** LLVM ASSIGN INSTRUCTION ********************************************
+*****************************************************************************************************************/
+
+public void createVariable(String varName) throws Exception {
+    if (variables.containsKey(varName)) throw new Exception("Already declared " + varName);
+
+    variables.put(varName, ++counter);
+}
+
+public String nextTemp() {
+    return (++temp) + "";
+}
+
+public void check(String varName) throws Exception {
+    if (!variables.containsKey(varName)) throw new Exception("Undeclared " + varName);
+}
+
+/**
+ * Assigns a value to a varName
+ * @param varName variable to which we'll assign the value
+ */
+public void assign(String varName, Object value) throws Exception {
+    check(varName);
+
+    write("store i32 " + value + ", i32* " + varName);
+}
+
+//ExprArith
+public String loadVariable(String varName) throws Exception {
+    check("%" + varName);
+    String newTemp = "%" + nextTemp();
+    write(newTemp + " = load i32* %" + varName);
+    leftExp = newTemp;
+    return newTemp;
+}
+
+public String exprOp(Object left, Object right, LexicalUnit op) throws Exception {
+    String newTemp = "%" + nextTemp();
+
+    switch (op) {
+        case MINUS:
+            write(newTemp + " = mul i32 -1, " + right);
+            break;
+
+        case PLUS:
+            write(newTemp + " = add i32 " + left + ", " + right);
+            break;
+
+        case TIMES:
+            write(newTemp + " = mul i32 " + left + ", " + right);
+            break;
+
+        case DIVIDE:
+            write(newTemp + " = sdiv i32 " + left + ", " + right);
+            break;
+    }
+
+    leftExp = newTemp;
+    return newTemp;
+}
+
+/*****************************************************************************************************************
+****************************************** PARSER  ***************************************************************
+*****************************************************************************************************************/
+
+public void parse() throws Exception {
     nextsym();
     program();
+    printRules();
+    generateCode();
 }
 
 void nextsym() {
     tok = symList.get(curTok).getType();
+    tokValue = symList.get(curTok).getValue() + "";
     curTok++;
 }
+
+//accessors
 
 boolean match(LexicalUnit t) {
     if (tok == t) {
@@ -29,26 +363,34 @@ boolean match(LexicalUnit t) {
     }
 }
 
-boolean program() {
+Object program() throws Exception {
     int r = 1;
+
 
     switch (tok) {
         case PROGRAM:
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.PROGRAM))
+            if (match(LexicalUnit.PROGRAM)) {
+                llvm_init();
+                nextLabel("entry");
+
                 if (match(LexicalUnit.VARNAME))
                     if (match(LexicalUnit.ENDLINE))
-                        if (Vars())
-                            if (Code())
-                                if (match(LexicalUnit.END)) return true;
+                        if (!(Vars() instanceof Boolean))
+                            if (!(Code() instanceof Boolean))
+                                if (match(LexicalUnit.END)) {
+                                    llvm_close();
+                                    return new String("");
+                                }
+            }
     }
 
-    syntaxError(r);
-    return false;
+    printSyntaxError(r);
+    return new Boolean(false);
 }
 
-boolean Vars() {
+Object Vars() throws Exception {
     int r;
     switch (tok) {
         case VARNAME:
@@ -58,64 +400,80 @@ boolean Vars() {
         case READ:
         case END:
             r = 3;
-            printRule(r);
-            return true;
+            addRule(r);
+            return new String("");
 
         case INTEGER:
             r = 2;
-            printRule(r);
+            addRule(r);
+            state = "vars";
 
             if (match(LexicalUnit.INTEGER))
-                if (VarList())
-                    if (match(LexicalUnit.ENDLINE)) return true;
+                if (!(VarList() instanceof Boolean))
+                    if (match(LexicalUnit.ENDLINE)) {
+                        state = "code";
+                        return new String("");
+                    }
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean VarList() {
+Object VarList() throws Exception {
     int r;
     switch (tok) {
         case VARNAME:
             r = 4;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.VARNAME))
-                if (VarList_next()) return true;
+            String value = "%" + tokValue;
 
-            syntaxError(r);
+            if (match(LexicalUnit.VARNAME)) {
+                if (state == "vars") {
+                    createVariable(value);
+                    write(value + " = alloca i32");
+                }
+
+                if (state == "read") {
+                    readInt(value);
+                }
+
+                if (!(VarList_next() instanceof Boolean)) return new String("");
+            }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean VarList_next() {
+Object VarList_next() throws Exception {
     int r;
     switch (tok) {
         case ENDLINE:
             r = 6;
-            printRule(r);
-            return true;
+            addRule(r);
+            return new String("");
 
         case COMMA:
             r = 5;
-            printRule(r);
+            addRule(r);
 
             if (match(LexicalUnit.COMMA))
-                if (VarList()) return true;
+                if (!(VarList() instanceof Boolean)) return new String("");
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean Code() {
+Object Code() throws Exception {
     int r;
     switch (tok) {
         case END:
@@ -123,8 +481,8 @@ boolean Code() {
         case ELSE:
         case ENDDO:
             r = 8;
-            printRule(r);
-            return true;
+            addRule(r);
+            return new String("");
 
         case VARNAME:
         case IF:
@@ -132,90 +490,96 @@ boolean Code() {
         case PRINT:
         case READ:
             r = 7;
-            printRule(r);
+            addRule(r);
 
-            if (Instruction())
+            if (!(Instruction() instanceof Boolean))
                 if (match(LexicalUnit.ENDLINE))
-                    if (Code()) return true;
+                    if (!(Code() instanceof Boolean)) return new String("");
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean Instruction() {
+Object Instruction() throws Exception {
     int r;
     switch (tok) {
         case VARNAME:
             r = 9;
-            printRule(r);
+            addRule(r);
 
-            if (Assign()) return true;
+            if (!(Assign() instanceof Boolean)) return new String("");
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case IF:
             r = 10;
-            printRule(r);
+            addRule(r);
 
-            if (If()) return true;
+            if (!(If() instanceof Boolean)) return new String("");
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case DO:
             r = 11;
-            printRule(r);
+            addRule(r);
 
-            if (Do()) return true;
+            if (!(Do() instanceof Boolean)) return new String("");
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case PRINT:
             r = 12;
-            printRule(r);
+            addRule(r);
 
-            if (Print()) return true;
+            if (!(Print() instanceof Boolean)) return new String("");
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case READ:
             r = 13;
-            printRule(r);
+            addRule(r);
 
-            if (Read()) return true;
+            if (!(Read() instanceof Boolean)) return new String("");
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean Assign() {
+Object Assign() throws Exception {
     int r;
     switch (tok) {
         case VARNAME:
             r = 14;
-            printRule(r);
+            addRule(r);
+
+            String value = "%" + tokValue;
+            Object res;
 
             if (match(LexicalUnit.VARNAME))
                 if (match(LexicalUnit.EQUAL))
-                    if (ExprArith()) return true;
+                    if (!((res = ExprArith()) instanceof Boolean)) {
+                        assign(value, res);
+                        return new String("");
+                    }
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean ExprArith() {
+Object ExprArith() throws Exception {
     int r;
     switch (tok) {
         case VARNAME:
@@ -223,19 +587,26 @@ boolean ExprArith() {
         case LEFT_PARENTHESIS:
         case MINUS:
             r = 15;
-            printRule(r);
+            addRule(r);
 
-            if (ExprArith_b())
-                if (ExprArithP()) return true;
+            Object res1;
+            Object res2;
 
-            syntaxError(r);
+            if (!((res2 = ExprArith_b()) instanceof Boolean)) {
+                if (!((res1 = ExprArithP()) instanceof Boolean)) {
+                    if (res1.equals("")) return res2;
+                    else return res1;
+                }
+            }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean ExprArithP() {
+Object ExprArithP() throws Exception {
     int r;
     switch (tok) {
         case RIGHT_PARENTHESIS:
@@ -249,26 +620,37 @@ boolean ExprArithP() {
         case DIFFERENT:
         case ENDLINE:
             r = 17;
-            printRule(r);
-            return true;
+            addRule(r);
+            return new String("");
 
         case MINUS:
         case PLUS:
             r = 16;
-            printRule(r);
+            addRule(r);
 
-            if (OpPlusMinus())
-                if (ExprArith_b())
-                    if (ExprArithP()) return true;
+            LexicalUnit value = tok;
+            Object res2;
+            Object res1;
+            Object left = leftExp;
 
-            syntaxError(r);
+            if (!(OpPlusMinus() instanceof Boolean)) {
+                if (!((res2 = ExprArith_b()) instanceof Boolean)) {
+                    String newTemp = exprOp(left, res2, value);
+
+                    if (!((res1 = ExprArithP()) instanceof Boolean)) {
+                        return newTemp;
+                    }
+                }
+            }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean ExprArith_b() {
+Object ExprArith_b() throws Exception {
     int r;
     switch (tok) {
         case VARNAME:
@@ -276,19 +658,25 @@ boolean ExprArith_b() {
         case LEFT_PARENTHESIS:
         case MINUS:
             r = 18;
-            printRule(r);
+            addRule(r);
 
-            if (ExprArith_c())
-                if (ExprArith_bP()) return true;
+            Object res1;
+            Object res2;
 
-            syntaxError(r);
+            if (!((res2 = ExprArith_c()) instanceof Boolean))
+                if (!((res1 = ExprArith_bP()) instanceof Boolean)) {
+                    if (res1.equals("")) return res2;
+                    else return res1;
+                }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean ExprArith_bP() {
+Object ExprArith_bP() throws Exception {
     int r;
     switch (tok) {
         case RIGHT_PARENTHESIS:
@@ -304,174 +692,239 @@ boolean ExprArith_bP() {
         case DIFFERENT:
         case ENDLINE:
             r = 20;
-            printRule(r);
-            return true;
+            addRule(r);
+            return new String("");
 
         case TIMES:
         case DIVIDE:
             r = 19;
-            printRule(r);
+            addRule(r);
 
-            if (OpTimesDivide())
-                if (ExprArith_c())
-                    if (ExprArith_bP()) return true;
+            LexicalUnit value = tok;
+            Object res1;
+            Object res2;
+            Object left = leftExp;
 
-            syntaxError(r);
+            if (!(OpTimesDivide() instanceof Boolean))
+                if (!((res2 = ExprArith_c()) instanceof Boolean)) {
+                    String newTemp = exprOp(left, res2, value);
+
+                    if (!((res1 = ExprArith_bP()) instanceof Boolean)) {
+                        return newTemp;
+                    }
+                }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+
+    return new Boolean(false);
 }
 
-boolean ExprArith_c() {
+Object ExprArith_c() throws Exception {
     int r;
+    String value = tokValue;
+    Object res;
     switch (tok) {
         case VARNAME:
             r = 22;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.VARNAME)) return true;
+            if (match(LexicalUnit.VARNAME)) {
+                return new String(loadVariable(value));
+            }
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
 
         case NUMBER:
             r = 23;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.NUMBER)) return true;
+            if (match(LexicalUnit.NUMBER)) {
+                leftExp = new String(value);
+                return leftExp;
+            }
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case LEFT_PARENTHESIS:
             r = 24;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.LEFT_PARENTHESIS))
-                if (ExprArith())
-                    if (match(LexicalUnit.RIGHT_PARENTHESIS)) return true;
+            if (match(LexicalUnit.LEFT_PARENTHESIS)) {
+                if (!((res = ExprArith()) instanceof Boolean)) {
+                    if (match(LexicalUnit.RIGHT_PARENTHESIS)) return res;
+                }
+            }
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case MINUS:
             r = 21;
-            printRule(r);
+            addRule(r);
 
             if (match(LexicalUnit.MINUS))
-                if (ExprArith_c()) return true;
+                if (!((res = ExprArith_c()) instanceof Boolean)) {
+                    String newTemp = "%" + nextTemp();
+                    write(newTemp + " = mul i32 -1, " + res);
 
-            syntaxError(r);
+                    leftExp = newTemp;
+                    return new String(newTemp);
+                }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean OpPlusMinus() {
+Object OpPlusMinus() {
     int r;
     switch (tok) {
         case MINUS:
             r = 26;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.MINUS)) return true;
+            if (match(LexicalUnit.MINUS)) {
+                return new String("");
+            }
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case PLUS:
             r = 25;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.PLUS)) return true;
+            if (match(LexicalUnit.PLUS)) {
+                return new String("");
+            }
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean OpTimesDivide() {
+Object OpTimesDivide() {
     int r;
     switch (tok) {
         case TIMES:
             r = 27;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.TIMES)) return true;
+            if (match(LexicalUnit.TIMES)) {
+                return new String("");
+            }
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case DIVIDE:
             r = 28;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.DIVIDE)) return true;
+            String value = tokValue;
 
-            syntaxError(r);
+            if (match(LexicalUnit.DIVIDE)) {
+                return new String("");
+            }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean If() {
+Object If() throws Exception {
     int r;
     switch (tok) {
         case IF:
             r = 29;
-            printRule(r);
+            addRule(r);
+
+            Object res;
+            String if_st = "if_" + ++labelCounter;
+            condFalse = "after_if_" + ++labelCounter;
 
             if (match(LexicalUnit.IF))
                 if (match(LexicalUnit.LEFT_PARENTHESIS))
-                    if (Cond())
+                    if (!((res = Cond()) instanceof Boolean)) {
+                        write("br i1 " + res + ", label %" + if_st + ", label %" + condFalse);
+                        // %9 = icmp slt i32 %8, %nombre
+
                         if (match(LexicalUnit.RIGHT_PARENTHESIS))
                             if (match(LexicalUnit.THEN))
-                                if (match(LexicalUnit.ENDLINE))
-                                    if (Code())
-                                        if (If_next()) return true;
+                                if (match(LexicalUnit.ENDLINE)) {
+                                    nextLabel(if_st);
 
-            syntaxError(r);
+                                    if (!(Code() instanceof Boolean)) {
+                                        write("br label %" + condFalse);
+                                        nextLabel(condFalse);
+
+                                        if (!(If_next() instanceof Boolean)) return new String("");
+                                    }
+                                }
+                    }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean If_next() {
+Object If_next() throws Exception {
     int r;
+    String after_if_else = "after_if_else_" + ++labelCounter;
     switch (tok) {
         case ENDIF:
             r = 30;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.ENDIF)) return true;
+            if (match(LexicalUnit.ENDIF)) {
+                write("br label %" + after_if_else);
+                nextLabel(after_if_else);
+                return new String("");
+            }
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case ELSE:
             r = 31;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.ELSE))
+            if (match(LexicalUnit.ELSE)) {
+                String else_st = "else_" + ++labelCounter;
+                write("br label %" + else_st);
+                nextLabel(else_st);
+
                 if (match(LexicalUnit.ENDLINE))
-                    if (Code())
-                        if (match(LexicalUnit.ENDIF)) return true;
+                    if (!(Code() instanceof Boolean))
+                        if (match(LexicalUnit.ENDIF)) {
+                            write("br label %" + after_if_else);
+                            nextLabel(after_if_else);
+                            return new String("");
+                        }
+            }
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean Cond() {
+Object Cond() throws Exception {
     int r;
     switch (tok) {
         case VARNAME:
@@ -480,44 +933,56 @@ boolean Cond() {
         case MINUS:
         case NOT:
             r = 32;
-            printRule(r);
+            addRule(r);
 
-            if (Cond_b())
-                if (CondP()) return true;
+            Object res1, res2;
 
-            syntaxError(r);
+            if (!((res1 = Cond_b()) instanceof Boolean))
+                if (!((res2 = CondP(res1)) instanceof Boolean)) {
+                    if (res2 != "") return res2;
+
+                    return res1;
+                }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean CondP() {
+Object CondP(Object res1) throws Exception {
     int r;
     switch (tok) {
         case RIGHT_PARENTHESIS:
         case MINUS:
         case NOT:
             r = 34;
-            printRule(r);
-            return true;
+            addRule(r);
+            return new String("");
 
         case OR:
             r = 33;
-            printRule(r);
+            addRule(r);
+
+            Object res2;
 
             if (match(LexicalUnit.OR))
-                if (Cond_b())
-                    if (CondP()) return true;
+                if (!((res2 = Cond_b()) instanceof Boolean)) {
+                    String newTemp = "%" + nextTemp();
+                    write(newTemp + " = or i1 " + res1 + ", " + res2);
 
-            syntaxError(r);
+                    if (!(CondP(newTemp) instanceof Boolean)) return new String(newTemp);
+                }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean Cond_b() {
+Object Cond_b() throws Exception {
     int r;
     switch (tok) {
         case VARNAME:
@@ -526,72 +991,89 @@ boolean Cond_b() {
         case MINUS:
         case NOT:
             r = 35;
-            printRule(r);
+            addRule(r);
 
-            if (Cond_c())
-                if (Cond_bP()) return true;
+            Object res1, res2;
 
-            syntaxError(r);
+            if (!((res1 = Cond_c()) instanceof Boolean))
+                if (!((res2 = Cond_bP(res1)) instanceof Boolean)) {
+                    if (res2 != "") return res2;
+
+                    return res1;
+                }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean Cond_bP() {
+Object Cond_bP(Object res1) throws Exception {
     int r;
     switch (tok) {
         case RIGHT_PARENTHESIS:
         case OR:
             r = 37;
-            printRule(r);
-            return true;
+            addRule(r);
+            return new String("");
 
         case AND:
             r = 36;
-            printRule(r);
+            addRule(r);
+
+            Object res2;
 
             if (match(LexicalUnit.AND))
-                if (Cond_c())
-                    if (Cond_bP()) return true;
+                if (!((res2 = Cond_c()) instanceof Boolean)) {
+                    String newTemp = "%" + nextTemp();
+                    write(newTemp + " = and i1 " + res1 + ", " + res2);
 
-            syntaxError(r);
+                    if (!(Cond_bP(newTemp) instanceof Boolean)) return new String(newTemp);
+                }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean Cond_c() {
+Object Cond_c() throws Exception {
     int r;
+    Object res;
     switch (tok) {
         case VARNAME:
         case NUMBER:
         case LEFT_PARENTHESIS:
         case MINUS:
             r = 39;
-            printRule(r);
+            addRule(r);
 
-            if (SimpleCond()) return true;
+            if (!((res = SimpleCond()) instanceof Boolean)) {
+                return new String(icmp(notCond1, notCondOp, notCond2, "i32"));
+            }
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case NOT:
             r = 38;
-            printRule(r);
+            addRule(r);
 
             if (match(LexicalUnit.NOT))
-                if (SimpleCond()) return true;
+                if (!((res = SimpleCond()) instanceof Boolean)) {
+                    return new String(icmpNot(notCond1, notCondOp, notCond2, "i32"));
+                }
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean SimpleCond() {
+Object SimpleCond() throws Exception {
     int r;
     switch (tok) {
         case VARNAME:
@@ -599,141 +1081,169 @@ boolean SimpleCond() {
         case LEFT_PARENTHESIS:
         case MINUS:
             r = 40;
-            printRule(r);
+            addRule(r);
 
-            if (ExprArith())
-                if (Comp())
-                    if (ExprArith()) return true;
+            if (!((notCond1 = ExprArith()) instanceof Boolean)) {
+                notCondOp = tok;
 
-            syntaxError(r);
+                if (!(Comp() instanceof Boolean))
+                    if (!((notCond2 = ExprArith()) instanceof Boolean)) {
+                        return new String("");
+                    }
+            }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean Comp() {
+Object Comp() throws Exception {
     int r;
     switch (tok) {
         case EQUAL_COMPARE:
             r = 41;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.EQUAL_COMPARE)) return true;
+            if (match(LexicalUnit.EQUAL_COMPARE)) return new String("");
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case GREATER_EQUAL:
             r = 42;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.GREATER_EQUAL)) return true;
+            if (match(LexicalUnit.GREATER_EQUAL)) return new String("");
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case GREATER:
             r = 43;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.GREATER)) return true;
+            if (match(LexicalUnit.GREATER)) return new String("");
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case SMALLER_EQUAL:
             r = 44;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.SMALLER_EQUAL)) return true;
+            if (match(LexicalUnit.SMALLER_EQUAL)) return new String("");
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case SMALLER:
             r = 45;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.SMALLER)) return true;
+            if (match(LexicalUnit.SMALLER)) return new String("");
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
 
         case DIFFERENT:
             r = 46;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.DIFFERENT)) return true;
+            if (match(LexicalUnit.DIFFERENT)) return new String("");
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean Do() {
+Object Do() throws Exception {
     int r;
     switch (tok) {
         case DO:
             r = 47;
-            printRule(r);
+            addRule(r);
 
-            if (match(LexicalUnit.DO))
+            if (match(LexicalUnit.DO)) {
+                String varName = tokValue;
+                String doCounter = "" + ++labelCounter;
+
                 if (match(LexicalUnit.VARNAME))
-                    if (match(LexicalUnit.EQUAL))
-                        if (match(LexicalUnit.NUMBER))
-                            if (match(LexicalUnit.COMMA))
-                                if (match(LexicalUnit.NUMBER))
-                                    if (match(LexicalUnit.ENDLINE))
-                                        if (Code())
-                                            if (match(LexicalUnit.ENDDO)) return true;
+                    if (match(LexicalUnit.EQUAL)) {
+                        String value1 = tokValue;
 
-            syntaxError(r);
+                        if (match(LexicalUnit.NUMBER))
+                            if (match(LexicalUnit.COMMA)) {
+                                String value2 = tokValue;
+
+                                if (match(LexicalUnit.NUMBER))
+                                    if (match(LexicalUnit.ENDLINE)) {
+                                        initFor(varName, value1, doCounter);
+                                        forLoop(varName, value2, doCounter);
+
+                                        if (!(Code() instanceof Boolean)) {
+                                            endFor(varName, doCounter);
+
+                                            if (match(LexicalUnit.ENDDO)) return new String("");
+                                        }
+                                    }
+                            }
+                    }
+            }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean Print() {
+Object Print() throws Exception {
     int r;
     switch (tok) {
         case PRINT:
             r = 48;
-            printRule(r);
+            addRule(r);
 
             if (match(LexicalUnit.PRINT))
-                if (match(LexicalUnit.COMMA))
-                    if (ExpList()) return true;
+                if (match(LexicalUnit.COMMA)) {
+                    state = "print";
 
-            syntaxError(r);
+                    if (!(ExpList() instanceof Boolean)) return new String("");
+                }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean Read() {
+Object Read() throws Exception {
     int r;
     switch (tok) {
         case READ:
             r = 49;
-            printRule(r);
+            addRule(r);
 
             if (match(LexicalUnit.READ))
-                if (match(LexicalUnit.COMMA))
-                    if (VarList()) return true;
+                if (match(LexicalUnit.COMMA)) {
+                    state = "read";
 
-            syntaxError(r);
+                    if (!(VarList() instanceof Boolean)) return new String("");
+                }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean ExpList() {
+Object ExpList() throws Exception {
     int r;
     switch (tok) {
         case VARNAME:
@@ -741,42 +1251,75 @@ boolean ExpList() {
         case LEFT_PARENTHESIS:
         case MINUS:
             r = 50;
-            printRule(r);
+            addRule(r);
 
-            if (ExprArith())
-                if (ExpList_next()) return true;
+            Object res;
 
-            syntaxError(r);
+            if (!((res = ExprArith()) instanceof Boolean)) {
+                printInt(res);
+
+                if (!(ExpList_next() instanceof Boolean)) return new String("");
+            }
+
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-boolean ExpList_next() {
+Object ExpList_next() throws Exception {
     int r;
     switch (tok) {
         case ENDLINE:
             r = 52;
-            printRule(r);
-            return true;
+            addRule(r);
+            return new String("");
 
         case COMMA:
             r = 51;
-            printRule(r);
+            addRule(r);
 
             if (match(LexicalUnit.COMMA))
-                if (ExpList()) return true;
+                if (!(ExpList() instanceof Boolean)) return new String("");
 
-            syntaxError(r);
+            printSyntaxError(r);
             break;
     }
 
-    return false;
+    return new Boolean(false);
 }
 
-void syntaxError(int i) {
-    System.out.println("A syntax error occurs at rule [" + i + "]");
+void printSyntaxError(int i) {
+    if (syntaxError == "") {
+        syntaxError = "A syntax error occurs at rule [" + i + "]";
+    }
+}
+
+void addRule(int i) {
+    ruleList.add(i);
+}
+
+void addCode(String s) {
+    codeList.add(s);
+}
+
+void printRules() {
+    for (int i = 0; i < ruleList.size(); i++) {
+        // printRule(ruleList.get(i));
+    }
+
+    if (syntaxError != "") {
+        System.out.println(syntaxError);
+    }
+}
+
+void generateCode() {
+    if (syntaxError == "") {
+        for (int i = 0; i < codeList.size(); i++) {
+            System.out.print(codeList.get(i));
+        }
+    }
 }
 
 void printRule(int i) {
